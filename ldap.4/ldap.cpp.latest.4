@@ -1,0 +1,1408 @@
+// ConsoleApplication1.cpp : Defines the entry point for the console application.
+//
+
+//##define LDAP_UNICODE 0
+#include "stdafx.h"
+
+//----------------------------------------------
+// Performing an LDAP Synchronous Search.
+//
+// Be aware that you must set the command prompt screen buffer 
+// height to 350 and the width to 90.
+//-------------------------------------------------------------
+
+#include <windows.h>
+#include "C:\ldap.1\ldap\Winldap.h"
+//#include "Winldap.h"
+#include <winber.h>
+#include <rpc.h>
+#include <rpcdce.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <sql.h>
+#include <sqlext.h>
+
+#include <ctime>
+
+
+LDAP* ldap_init(
+	_In_ PCHAR HostName,
+	_In_ ULONG PortNumber
+);
+
+ULONG ldap_bind_s(
+	_In_ LDAP  *ld,
+	_In_ PCHAR dn,
+	_In_ PCHAR cred,
+	_In_ ULONG method
+);
+
+
+ULONG ldap_search_s(
+	_In_  LDAP        *ld,
+	_In_  PCHAR       base,
+	_In_  ULONG       scope,
+	_In_  PCHAR       filter,
+	_In_  PCHAR       attrs[],
+	_In_  ULONG       attrsonly,
+	_Out_ LDAPMessage **res
+);
+
+
+
+PCHAR ldap_first_attribute(
+	_In_  LDAP        *ld,
+	_In_  LDAPMessage *entry,
+	_Out_ BerElement  **ptr
+);
+
+
+
+PCHAR* ldap_get_values(
+	_In_ LDAP        *ld,
+	_In_ LDAPMessage *entry,
+	_In_ PCHAR       attr
+);
+
+
+ULONG ldap_count_values(
+	_In_ PCHAR *vals
+);
+
+
+ULONG ldap_value_free(
+	PCHAR *vals
+);
+
+VOID ldap_memfree(
+	_In_ PCHAR Block
+);
+
+/*
+PCHAR ldap_next_attribute(
+	_In_    LDAP        *ld,
+	_In_    LDAPMessage *entry,
+	_Inout_ BerElement  *ptr
+);
+*/
+
+
+ULONG ldap_connect(
+	_In_ LDAP         *ld,
+	_In_ LDAP_TIMEVAL *timeout
+);
+
+
+void GetConnected(char* sAMAccountName, char* givenName, char* sn,char* initials, char* displayName, char* mail, char* department, char* physicalDeliveryOfficeName, char* title, char* streetAddress, char* l, char* st, char* telephoneNumber);
+
+//-----------------------------------------------------------
+// This subroutine must have validated credentials (name and
+// password) passed to it.
+//-----------------------------------------------------------
+int MyLDAPSearch(PCHAR pUserName, PCHAR pPassword)
+{
+	FILE * fp;
+	fp = fopen("file.txt", "w+");
+
+    //---------------------------------------------------------
+    // Initialize a session. LDAP_PORT is the default port, 389.
+    //---------------------------------------------------------
+    //PCHAR hostName = "fabrikam.com";
+	//PCHAR hostName = "10.66.103.127";
+	//PCHAR hostName = "10.66.100.139";
+	PCHAR hostName = "10.66.101.82";
+	//PCHAR hostName = "10.66.104.145";
+    LDAP* pLdapConnection = NULL;
+    
+    pLdapConnection = ldap_init(hostName, LDAP_PORT);
+    
+    if (pLdapConnection == NULL)
+    {
+        printf("ldap_init failed with 0x%x.\n",LdapGetLastError());
+        ldap_unbind(pLdapConnection);
+        return -1;
+    }
+    else
+        printf("ldap_init succeeded \n");
+    
+    
+    //-------------------------------------------------------
+    // Set session options.
+    //-------------------------------------------------------
+    ULONG version = LDAP_VERSION3;
+    //ULONG numReturns = 10;
+	ULONG numReturns = 10;
+	//ULONG numReturns = 1000;
+	//ULONG numReturns = 100000;
+    ULONG lRtn = 0;
+    
+	/*
+	int protocolVersion;
+	ldap_get_option(pLdapConnection, LDAP_OPT_PROTOCOL_VERSION, &protocolVersion);
+
+	int currentSizeLimit = 0;
+	ldap_get_option(pLdapConnection, LDAP_OPT_SIZELIMIT, &currentSizeLimit);
+	*/
+
+    // Set the version to 3.0 (default is 2.0).
+    lRtn = ldap_set_option(
+                    pLdapConnection,           // Session handle
+                    LDAP_OPT_PROTOCOL_VERSION, // Option
+                    (void*) &version);         // Option value
+
+    if(lRtn == LDAP_SUCCESS)
+        printf("ldap version set to 3.0 \n");
+    else
+    {
+        printf("SetOption Error:%0lX\n", lRtn);
+        ldap_unbind(pLdapConnection);
+        return -1;
+    }
+
+    // Set the limit on the number of entries returned to 10.
+    lRtn = ldap_set_option(
+                    pLdapConnection,       // Session handle
+                    LDAP_OPT_SIZELIMIT,    // Option
+                    (void*) &numReturns);  // Option value
+
+    if(lRtn == LDAP_SUCCESS)
+        printf("Max return entries set to 10 \n");
+    else
+    {
+        printf("SetOption Error:%0lX\n", lRtn);
+        ldap_unbind(pLdapConnection);
+        return -1;
+    }
+    
+    
+    //--------------------------------------------------------
+    // Connect to the server.
+    //--------------------------------------------------------
+    
+    lRtn = ldap_connect(pLdapConnection, NULL);
+    
+    if(lRtn == LDAP_SUCCESS)
+        printf("ldap_connect succeeded \n");
+    else
+    {
+        printf("ldap_connect failed with 0x%lx.\n",lRtn);
+        ldap_unbind(pLdapConnection);
+        return -1;
+    }
+    
+    
+    //--------------------------------------------------------
+    // Bind with credentials.
+    //--------------------------------------------------------
+    //PCHAR pMyDN = "DC=fabrikam,DC=com";
+	//PCHAR pMyDN = "DC=ohioadplugin1,DC=net";
+	//PCHAR pMyDN = "DC=ohioplugin2008,DC=net";
+	//PCHAR pMyDN = "DC=ohioplugin8,DC=net";
+	PCHAR pMyDN = "OU=MyTestOU,DC=ohioplugin8,DC=net";
+	//PCHAR pMyDN = "DC=ohioadplugin,DC=net";
+    SEC_WINNT_AUTH_IDENTITY secIdent;
+ 
+    secIdent.User = (unsigned char*)pUserName;
+	//secIdent.User = (unsigned short*)pUserName;
+    secIdent.UserLength = strlen(pUserName);
+    secIdent.Password = (unsigned char*)pPassword;
+	//secIdent.Password = (unsigned short*)pPassword;
+    secIdent.PasswordLength = strlen(pPassword);
+    secIdent.Domain = (unsigned char*)hostName;
+	//secIdent.Domain = (unsigned short*)hostName;
+    secIdent.DomainLength = strlen(hostName);
+    secIdent.Flags = SEC_WINNT_AUTH_IDENTITY_ANSI;
+    
+#if 0
+	//PWCHAR user_name = L"adm@ad.domain.name";
+	//PWCHAR password = L"mypassword";
+
+	PCHAR user_name = "administrator@ohioadplugin1.net";
+	//PCHAR user_name = "administrator";
+	PCHAR password = "abc@1234#";
+
+	lRtn = ldap_simple_bind_s(pLdapConnection, user_name, password);
+	if (lRtn == LDAP_SUCCESS)
+	{
+		printf("ldap_simple_bind_s succeeded \n");
+	}
+	else
+	{
+		printf("ldap_simple_bind_s failed with 0x%lx.\n", lRtn);
+		ldap_unbind(pLdapConnection);
+		return -1;
+	}
+
+#endif 
+	
+
+	lRtn = ldap_bind_s(
+		pLdapConnection,      // Session Handle
+		pMyDN,                // Domain DN
+		(PCHAR)&secIdent,     // Credential structure
+		LDAP_AUTH_NEGOTIATE); // Auth mode
+		//LDAP_AUTH_SIMPLE);
+    if(lRtn == LDAP_SUCCESS)
+    {
+        printf("ldap_bind_s succeeded \n");
+        secIdent.Password = NULL; // Remove password pointer
+        pPassword = NULL;         // Remove password pointer
+    }
+    else
+    {
+        printf("ldap_bind_s failed with 0x%lx.\n",lRtn);
+        ldap_unbind(pLdapConnection);
+        return -1;
+    }
+
+	/* FOR PAGING */
+	char		 *server, *base, *filter, *scopes[] = { "BASE", "ONELEVEL", "SUBTREE" };
+	int		 scope;
+	LDAP		 *ld;
+	int		   l_rc, l_entries, l_port, l_entry_count = 0, morePages, l_errcode = 0, page_nbr;
+	//unsigned long  pageSize;
+	//unsigned long  pageSize = 100000;
+	//unsigned long  pageSize = 100000;
+	unsigned long  pageSize = 3000;
+	struct berval  *cookie = NULL;
+	char           pagingCriticality = 'T', *l_dn;
+	//char           pagingCriticality = 'F', *l_dn;
+	unsigned long  totalCount;
+	LDAPControl    *pageControl = NULL, *M_controls[2] = { NULL, NULL }, **returnedControls = NULL;
+	LDAPMessage	   *l_result, *l_entry;
+
+	/******************************************************************/
+	/* Get one page of the returned results each time                 */
+	/* through the loop                                               */
+	do
+	{
+		LDAPMessage* pSearchResult;
+		l_rc = ldap_create_page_control(pLdapConnection, pageSize, cookie, pagingCriticality, &pageControl);
+
+		/* Insert the control into a list to be passed to the search.     */
+		M_controls[0] = pageControl;
+
+		/* Search for entries in the directory using the parmeters.       */
+		//filter = "(&(objectCategory=person)(objectClass=user))";
+		//filter = "(objectClass=*)";
+		filter = "(objectClass=user)";
+		//filter = "(objectCategory=organizationalUnit)";
+		scope = LDAP_SCOPE_SUBTREE;
+		base = pMyDN;
+		//l_rc = ldap_search_ext_s(pLdapConnection, base, scope, filter, NULL, 0, M_controls, NULL, NULL, 0, &l_result);
+		//l_rc = ldap_search_ext_s(pLdapConnection, base, scope, filter, NULL, 0, M_controls, NULL, NULL, 0, &pSearchResult);
+		l_rc = ldap_search_ext_s(pLdapConnection, base, scope, filter, NULL, 0, M_controls, NULL, NULL, 0, &pSearchResult);
+
+		if ((l_rc != LDAP_SUCCESS) & (l_rc != LDAP_PARTIAL_RESULTS))
+		{
+			printf("==Error==");
+			printf("  Failure during a search.  Return code is %d.\n", l_rc);
+			ldap_unbind(pLdapConnection);
+			break;
+		}
+
+		/* Parse the results to retrieve the contols being returned.      */
+		//l_rc = ldap_parse_result(ld, l_result, &l_errcode, NULL, NULL, NULL, &returnedControls, LDAP_FALSE);
+		//l_rc = ldap_parse_result(ld, l_result, (ULONG*)&l_errcode, NULL, NULL, NULL, &returnedControls, LDAP_FALSE);
+		//l_rc = ldap_parse_result(pLdapConnection, l_result, (ULONG*)&l_errcode, NULL, NULL, NULL, &returnedControls, FALSE);
+		l_rc = ldap_parse_result(pLdapConnection, pSearchResult, (ULONG*)&l_errcode, NULL, NULL, NULL, &returnedControls, FALSE);
+		
+
+		if (cookie != NULL)
+		{
+			ber_bvfree(cookie);
+			cookie = NULL;
+		}
+
+		/* Parse the page control returned to get the cookie and          */
+		/* determine whether there are more pages.                        */
+		l_rc = ldap_parse_page_control(pLdapConnection, returnedControls, &totalCount, &cookie);
+
+		/* Determine if the cookie is not empty, indicating there are more pages for these search parameters. */
+		if (cookie && cookie->bv_val != NULL && (strlen(cookie->bv_val) > 0))
+		{
+			//morePages = LDAP_TRUE;
+			morePages = TRUE;
+		}
+		else
+		{
+			//morePages = LDAP_FALSE;
+			morePages = FALSE;
+		}
+
+		/* Cleanup the controls used. */
+		if (returnedControls != NULL)
+		{
+			ldap_controls_free(returnedControls);
+			returnedControls = NULL;
+		}
+		M_controls[0] = NULL;
+		ldap_control_free(pageControl);
+		pageControl = NULL;
+
+		/* FOR PAGING */
+
+
+
+	//ldap_set_option for size limit 
+	/*
+	int sizeLimit = 100000;
+	ldap_set_option(pLdapConnection, LDAP_OPT_SIZELIMIT, &sizeLimit);
+
+
+	int currentSizeLimit1 = 0;
+	ldap_get_option(pLdapConnection, LDAP_OPT_SIZELIMIT, &currentSizeLimit1);
+	*/
+
+	//----------------------------------------------------------
+	// Perform a synchronous search of fabrikam.com for 
+	// all user objects that have a "person" category.
+	//----------------------------------------------------------
+		ULONG errorCode = LDAP_SUCCESS;
+		//LDAPMessage* pSearchResult;
+		//PCHAR pMyFilter = "(&(objectCategory=person)(objectClass=user))";
+		//PCHAR pMyFilter = "(objectClass=*)";
+		//PCHAR pMyFilter = "(objectClass=*)";
+		PCHAR pMyFilter = "(objectClass=user)";
+		//PCHAR pMyFilter = "(objectCategory=organizationalUnit)";
+		PCHAR pMyAttributes[6];
+
+		pMyAttributes[0] = "cn";
+		pMyAttributes[1] = "company";
+		pMyAttributes[2] = "department";
+		pMyAttributes[3] = "telephoneNumber";
+		pMyAttributes[4] = "memberOf";
+		pMyAttributes[5] = NULL;
+
+#if 0
+		errorCode = ldap_search_s(
+			pLdapConnection,    // Session handle
+			pMyDN,              // DN to start search
+			LDAP_SCOPE_SUBTREE, // Scope
+			pMyFilter,          // Filter
+			pMyAttributes,      // Retrieve list of attributes
+			0,                  // Get both attributes and values
+			&pSearchResult);    // [out] Search results
+
+		if (errorCode != LDAP_SUCCESS)
+		{
+			printf("ldap_search_s failed with 0x%0lx \n", errorCode);
+			ldap_unbind_s(pLdapConnection);
+			if (pSearchResult != NULL)
+				ldap_msgfree(pSearchResult);
+			return -1;
+		}
+		else
+			printf("ldap_search succeeded \n");
+
+#endif 
+		//----------------------------------------------------------
+		// Get the number of entries returned.
+		//----------------------------------------------------------
+		ULONG numberOfEntries;
+
+		numberOfEntries = ldap_count_entries(
+			pLdapConnection,    // Session handle
+			pSearchResult);     // Search result
+
+		if (numberOfEntries == NULL)
+		{
+			printf("ldap_count_entries failed with 0x%0lx \n", errorCode);
+			ldap_unbind_s(pLdapConnection);
+			if (pSearchResult != NULL)
+				ldap_msgfree(pSearchResult);
+			return -1;
+		}
+		else
+			printf("ldap_count_entries succeeded \n");
+
+		printf("The number of entries is: %d \n", numberOfEntries);
+
+
+		//----------------------------------------------------------
+		// Loop through the search entries, get, and output the
+		// requested list of attributes and values.
+		//----------------------------------------------------------
+		LDAPMessage* pEntry = NULL;
+		PCHAR pEntryDN = NULL;
+		ULONG iCnt = 0;
+		char* sMsg;
+		BerElement* pBer = NULL;
+		PCHAR pAttribute = NULL;
+		PCHAR* ppValue = NULL;
+		ULONG iValue = 0;
+
+		for (iCnt = 0; iCnt < numberOfEntries; iCnt++)
+		{
+			// Get the first/next entry.
+			if (!iCnt)
+				pEntry = ldap_first_entry(pLdapConnection, pSearchResult);
+			else
+				pEntry = ldap_next_entry(pLdapConnection, pEntry);
+
+			// Output a status message.
+			sMsg = (!iCnt ? "ldap_first_entry" : "ldap_next_entry");
+			if (pEntry == NULL)
+			{
+				printf("%s failed with 0x%0lx \n", sMsg, LdapGetLastError());
+				ldap_unbind_s(pLdapConnection);
+				ldap_msgfree(pSearchResult);
+				return -1;
+			}
+			else
+				printf("%s succeeded\n", sMsg);
+
+			// Output the entry number.
+			printf("ENTRY NUMBER %i \n", iCnt);
+			fprintf(fp, "ENTRY NUMBER %i \n", iCnt);
+
+			// Get the first attribute name.
+			pAttribute = ldap_first_attribute(
+				pLdapConnection,   // Session handle
+				pEntry,            // Current entry
+				&pBer);            // [out] Current BerElement
+
+			/*To Store and Send to DB for Insert Query*/
+			/*
+			char* psAMAccountName = NULL;
+			char* pgivenName = NULL;
+			char* psn = NULL;
+			char* pinitials = NULL;
+			char* pdisplayName = NULL;
+			//char* pmail = NULL; //mail is the last attribute hence not needed
+			char* pdepartment = NULL;
+			char* pphysicalDeliveryOfficeName = NULL;
+			char* ptitle = NULL;
+			char* pstreetAddress = NULL;
+			char* pl = NULL;
+			char* pst = NULL;
+			char* ptelephoneNumber = NULL;
+			*/
+			char psAMAccountName[255];
+			memset(psAMAccountName,'\0',255);
+			char pgivenName[255];
+			memset(pgivenName,'\0',255);
+			char psn[255];
+			memset(psn,'\0',255);
+			char pinitials[255];
+			memset(pinitials,'\0',255);
+			char pdisplayName[255];
+			memset(pdisplayName,'\0',255);
+			//char* pmail = NULL; //mail is the last attribute hence not needed
+			char pdepartment[255];
+			memset(pdepartment,'\0',255);
+			char pphysicalDeliveryOfficeName[255];
+			memset(pphysicalDeliveryOfficeName,'\0',255);
+			char ptitle[255];
+			memset(ptitle,'\0',255);
+			char pstreetAddress[255];
+			memset(pstreetAddress,'\0',255);
+			char pl[255];
+			memset(pl,'\0',255);
+			char pst[255];
+			memset(pst,'\0',255);
+			char ptelephoneNumber[255];
+			memset(ptelephoneNumber,'\0',255);
+			char pmail[255];
+			memset(pmail,'\0',255);
+
+
+
+  // Output the attribute names for the current object
+  // and output values.
+			while (pAttribute != NULL)
+			{
+				if(!strcmp(pAttribute, "sAMAccountName") ||
+				!strcmp(pAttribute, "givenName") ||
+				!strcmp(pAttribute, "sn") ||
+				!strcmp(pAttribute, "initials") ||
+				!strcmp(pAttribute, "displayName") ||
+				!strcmp(pAttribute, "mail") ||
+				!strcmp(pAttribute, "title") ||
+				!strcmp(pAttribute, "department") ||
+				!strcmp(pAttribute, "physicalDeliveryOfficeName") ||
+				!strcmp(pAttribute, "telephoneNumber")	||	
+				!strcmp(pAttribute, "l") ||
+				!strcmp(pAttribute, "st")	||		
+				!strcmp(pAttribute, "streetAddress")) 
+				{
+
+					// Output the attribute name.
+					printf("     ATTR: %s", pAttribute);
+					fprintf(fp, "     ATTR: %s\n", pAttribute);
+
+						/*
+						if(!strcmp(pAttribute, "sAMAccountName"))
+							psAMAccountName = pAttribute;
+						else if(!strcmp(pAttribute, "givenName"))
+							pgivenName = pAttribute;
+						else if(!strcmp(pAttribute, "sn"))
+							psn = pAttribute;
+						else if(!strcmp(pAttribute, "initials"))
+							pinitials = pAttribute;
+						else if(!strcmp(pAttribute, "displayName"))
+							pdisplayName = pAttribute;
+						else if(!strcmp(pAttribute, "department"))
+							pdepartment = pAttribute;
+						else if(!strcmp(pAttribute, "physicalDeliveryOfficeName"))
+							pphysicalDeliveryOfficeName = pAttribute;
+						else if(!strcmp(pAttribute, "title"))
+							ptitle = pAttribute;
+						else if(!strcmp(pAttribute, "streetAddress"))
+							pstreetAddress = pAttribute;
+						else if(!strcmp(pAttribute, "l"))
+							pl = pAttribute;
+						else if(!strcmp(pAttribute, "st"))
+							pst = pAttribute;
+						else if(!strcmp(pAttribute, "telephoneNumber"))
+							ptelephoneNumber = pAttribute;
+						else if(!strcmp(pAttribute, "mail"))
+							GetConnected(psAMAccountName, pgivenName, psn,pinitials,pdisplayName, pAttribute, pdepartment, 
+							pphysicalDeliveryOfficeName, ptitle, pstreetAddress, pl, pst, ptelephoneNumber);
+						*/
+						/*
+						if(!strcmp(pAttribute, "sAMAccountName"))
+							strcpy(psAMAccountName,pAttribute);
+						else if(!strcmp(pAttribute, "givenName"))
+							strcpy(pgivenName,pAttribute);
+						else if(!strcmp(pAttribute, "sn"))
+							strcpy(psn,pAttribute);
+						else if(!strcmp(pAttribute, "initials"))
+							strcpy(pinitials,pAttribute);
+						else if(!strcmp(pAttribute, "displayName"))
+							strcpy(pdisplayName,pAttribute);
+						else if(!strcmp(pAttribute, "department"))
+							strcpy(pdepartment,pAttribute);
+						else if(!strcmp(pAttribute, "physicalDeliveryOfficeName"))
+							strcpy(pphysicalDeliveryOfficeName,pAttribute);
+						else if(!strcmp(pAttribute, "title"))
+							strcpy(ptitle,pAttribute);
+						else if(!strcmp(pAttribute, "streetAddress"))
+							strcpy(pstreetAddress,pAttribute);
+						else if(!strcmp(pAttribute, "l"))
+							strcpy(pl,pAttribute);
+						else if(!strcmp(pAttribute, "st"))
+							strcpy(pst,pAttribute);
+						else if(!strcmp(pAttribute, "telephoneNumber"))
+							strcpy(ptelephoneNumber,pAttribute);
+						else if(!strcmp(pAttribute, "mail"))
+							GetConnected(psAMAccountName, pgivenName, psn,pinitials,pdisplayName, pAttribute, pdepartment, 
+							pphysicalDeliveryOfficeName, ptitle, pstreetAddress, pl, pst, ptelephoneNumber);
+						*/	
+					
+					// Get the string values.
+
+					ppValue = ldap_get_values(
+						pLdapConnection,  // Session Handle
+						pEntry,           // Current entry
+						pAttribute);      // Current attribute
+
+		// Print status if no values are returned (NULL ptr)
+					if (ppValue == NULL)
+					{
+						printf(": [NO ATTRIBUTE VALUE RETURNED]");
+					}
+
+					// Output the attribute values
+					else
+					{
+						iValue = ldap_count_values(ppValue);
+						if (!iValue)
+						{
+							printf(": [BAD VALUE LIST]");
+						}
+						else
+						{
+							if(!strcmp(pAttribute, "sAMAccountName"))
+							{
+								strcpy(psAMAccountName,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(psAMAccountName,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "givenName"))
+							{
+								strcpy(pgivenName,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(pgivenName,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "sn"))
+							{
+								strcpy(psn,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(psn,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "initials"))
+							{
+								strcpy(pinitials,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(pinitials,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "displayName"))
+							{
+								strcpy(pdisplayName,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(pdisplayName,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "department"))
+							{
+								strcpy(pdepartment,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(pdepartment,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "physicalDeliveryOfficeName"))
+							{
+								strcpy(pphysicalDeliveryOfficeName,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(pphysicalDeliveryOfficeName,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "title"))
+							{
+								strcpy(ptitle,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(ptitle,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "streetAddress"))
+							{
+								strcpy(pstreetAddress,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(pstreetAddress,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "l"))
+							{
+								strcpy(pl,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(pl,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "st"))
+							{
+								strcpy(pst,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(pst,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "telephoneNumber"))
+							{
+								strcpy(ptelephoneNumber,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(ptelephoneNumber,ppValue[z]);
+								}
+							}
+							else if(!strcmp(pAttribute, "mail"))
+							{
+								strcpy(pmail,(const char*)*ppValue);
+								// Output more values if available
+								ULONG z;
+								for (z = 1; z < iValue; z++)
+								{
+									strcat(pmail,ppValue[z]);
+								}
+								GetConnected(psAMAccountName, pgivenName, psn,pinitials,pdisplayName, pmail, pdepartment, 
+								pphysicalDeliveryOfficeName, ptitle, pstreetAddress, pl, pst, ptelephoneNumber);
+							}
+
+							// Output the first attribute value
+							printf(": %s", (const char*)*ppValue);
+
+							// Output more values if available
+							ULONG z;
+							for (z = 1; z < iValue; z++)
+							{
+								printf(", %s", ppValue[z]);
+							}
+						}
+					}
+					printf("\n");
+			}//end of if
+					// Free memory.
+					if (ppValue != NULL)
+						ldap_value_free(ppValue);
+					ppValue = NULL;
+					ldap_memfree(pAttribute);
+	
+					// Get next attribute name.
+					pAttribute = ldap_next_attribute(
+						pLdapConnection,   // Session Handle
+						pEntry,            // Current entry
+						pBer);             // Current BerElement
+					//printf("\n");
+				
+			}
+
+		}//end of for loops
+			//} while (morePages == LDAP_TRUE);
+		//} while (morePages == TRUE);
+
+		if (pBer != NULL)
+			ber_free(pBer, 0);
+		pBer = NULL;
+
+
+		//----------------------------------------------------------
+		// Normal cleanup and exit.
+		//----------------------------------------------------------
+		//ldap_unbind(pLdapConnection);
+		ldap_msgfree(pSearchResult);
+		ldap_value_free(ppValue);
+
+		} while (morePages == TRUE);
+
+		ber_bvfree(cookie);
+		cookie = NULL;
+
+		ldap_unbind(pLdapConnection);
+		fclose(fp);
+
+		return 0;
+
+}
+
+#if 0
+
+int  AddFields()
+{
+	ULONG CallValue;
+
+	PCHAR hostName = "10.66.100.139";
+	//PCHAR hostName = "10.66.104.145";
+	LDAP* pLdapConnection = NULL;
+
+	pLdapConnection = ldap_init(hostName, LDAP_PORT);
+
+	if (pLdapConnection == NULL)
+	{
+		printf("ldap_init failed with 0x%x.\n", LdapGetLastError());
+		ldap_unbind(pLdapConnection);
+		return -1;
+	}
+	else
+		printf("ldap_init succeeded \n");
+
+
+	// Attributes include Name, Class, First name, Last name, Title, and Telephone number
+	LDAPMod Name, OClass, FName, LName, Title, Phone;
+
+#if 0
+	LDAP *ld = ldap_init(NULL, LDAP_PORT);
+
+	CallValue = ldap_connect(ld, NULL);
+#endif 
+
+	CallValue = ldap_connect(pLdapConnection, NULL);
+
+	if (CallValue != LDAP_SUCCESS)
+	{
+		return 0;
+	}
+
+
+	// Specify the distinguished name for the entry.
+	//char *entry_dn = "cn=Jeff Smith,CN=Users";
+	char *entry_dn = "cn=Guest,CN=Guests";
+
+	//char *cn_values[] = { "Jeff Smith", NULL };
+	char *cn_values[] = { "Guest", NULL };
+	Name.mod_op = LDAP_MOD_ADD;
+	Name.mod_type = "cn";
+	Name.mod_values = cn_values; 
+
+		char *oc_values[] = { "user", NULL };
+	OClass.mod_op = LDAP_MOD_ADD;
+	OClass.mod_type = "objectClass";
+	OClass.mod_values = oc_values;
+
+		char *gn_values[] = { "Jeff", NULL };
+	FName.mod_op = LDAP_MOD_ADD;
+	FName.mod_type = "givenName";
+	FName.mod_values = gn_values; 
+
+		char *sn_values[] = { "Smith", NULL };
+	LName.mod_op = LDAP_MOD_ADD;
+	LName.mod_type = "sn";
+	LName.mod_values = sn_values;
+
+		char *ti_values[] = { "Developer", NULL };
+	Title.mod_op = LDAP_MOD_ADD;
+	Title.mod_type = "title";
+	Title.mod_values = ti_values;
+
+		char *pn_values[] = { "425) 555-0174", NULL };
+	Phone.mod_op = LDAP_MOD_ADD;
+	Phone.mod_type = "telephoneNumber";
+	Phone.mod_values = pn_values; 
+
+		// Build the array of attributes. 
+		LDAPMod *NewEntry[7];
+
+	NewEntry[0] = &Name;
+	NewEntry[1] = &OClass;
+		NewEntry[2] = &FName;
+	NewEntry[3] = &LName;
+	NewEntry[4] = &Title;
+	NewEntry[5] = &Phone;
+	NewEntry[6] = NULL;
+
+	// Add the entry.
+	//CallValue = ldap_add(ld, entry_dn, NewEntry);
+	CallValue = ldap_add(pLdapConnection, entry_dn, NewEntry);
+	
+	// Pass CallValue to ldap_result to verify the 
+	// status of the asynchronous operation.
+
+	//CallValue = ldap_unbind(ld);
+	CallValue = ldap_unbind(pLdapConnection);
+
+	return 1; //fine
+}
+#endif
+
+
+void GetConnected(char* samaccountname, char* givenname, char* sn,char* middlename, char* Displayname, char* Mail, char* Department, char* physicalDeliveryOfficeName, char* Title, char* streetAddress, char* l, char* st, char* telephoneNumber)
+{
+    SQLHANDLE henv;
+    SQLRETURN rc;
+    SQLHANDLE hconn;
+    SQLSMALLINT bufsize=0;
+    SQLINTEGER nativeerror=0;
+    SQLSMALLINT textlen=0;
+    unsigned char connStrOut[256];
+    //SQLWCHAR sqlstate[32];
+	SQLCHAR sqlstate[32];
+    //SQLWCHAR message[256];
+	SQLCHAR message[256];
+ 
+    rc = SQLAllocEnv(&henv);
+    if (rc != SQL_SUCCESS)
+    {
+        printf("\nSQLAllocEnv call failed.");
+        return;
+    }
+ 
+    rc = SQLAllocHandle(SQL_HANDLE_DBC, henv, &hconn);
+    if (rc != SQL_SUCCESS)
+    {
+        SQLFreeHandle(SQL_HANDLE_ENV, henv);
+        printf("\nSQLAllocHandle call failed.");
+        return;
+    }
+ 
+    //rc = SQLDriverConnect(hconn, NULL, (SQLWCHAR*)TEXT("DRIVER=SQL Server;SERVER=MyServer,1433;UID=Administrator;PWD=Pass;"), SQL_NTS, NULL, 256, &bufsize, SQL_DRIVER_NOPROMPT);
+	//rc = SQLDriverConnect(hconn, NULL,(SQLCHAR*)TEXT("DRIVER=SQL Server;SERVER=MyServer,1433;UID=Administrator;PWD=Pass;"), SQL_NTS, NULL, 256, &bufsize, SQL_DRIVER_NOPROMPT);
+	rc = SQLDriverConnect(hconn, NULL,(SQLCHAR*)TEXT("DRIVER=SQL Server;SERVER=127.0.0.1,1433;UID=sa;PWD=sa123;DATABASE=LM120d"),
+		SQL_NTS, NULL, 256, &bufsize, SQL_DRIVER_NOPROMPT);
+ 
+    if (bufsize!=0)
+    {
+        //printf("Connected successfully.\n");
+
+ 
+  //strcpy((char*)stmt_handle,"INSERT INTO members_ (Id, Float_Point, Date_Field, Text_Field) VALUES(?,?,?,?);");
+
+
+/*SQLPrepare(stmt_handle,
+			"select * from mytable where mycol = ?", SQL_NTS);*/
+		SQLHSTMT  stmt_handle = SQL_NULL_HSTMT;  // Statement handle
+		int retcode = SQLAllocHandle(SQL_HANDLE_STMT, hconn, &stmt_handle);
+		//int ret1 = SQLExecDirect(stmt_handle, (SQLCHAR*)"select * from members_", SQL_NTS);
+		
+		/*
+		int ret2 = SQLPrepare(stmt_handle,
+			(SQLCHAR*) "select * from members_", SQL_NTS);
+		*/
+		/*
+		SQLPrepare(stmt_handle,
+			(SQLCHAR*) "INSERT INTO members_ (Id, Float_Point, Date_Field, Text_Field) VALUES(?,?,?,?);", SQL_NTS);
+			*/
+
+			//"select * from members_", 1);
+/*
+		int ret2 = SQLPrepare(stmt_handle,
+			(SQLCHAR*) "INSERT INTO members_ (Additional_, AddNeeded_, CanAppPend_, CleanAuto_,Comment_, ConfirmDat_,DateBounce_,DateHeld_,DateJoined_,DateUnsub_,Domain_,EmailAddr_,EnableWYSIWYG_,ExpireDate_,FullName_,IsListAdm_,List_,LyrisBehaviour_,MailFormat_,MemberID_,MemberType_,NoRepro_,NotifyErr_,NotifySubm_,NumAppNeed_,NumBounces_,Password_,PermissionGroupID_,RcvAdmMail_,ReadsHtml_,ReceiveAck_,SyncCanResubscribe_,SyncResubscribeType_,SubType_,UnsubMessageID_,UserID_,UserNameLC_,samaccountname,givenname,sn,middlename,Displayname,Mail,Department,Office,Title) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);", SQL_NTS);
+*/
+		/*
+		int ret3 = SQLPrepare(stmt_handle,
+			(SQLCHAR*) "INSERT INTO tableNew (A,last_name,Additional_) VALUES(?,?,?);", SQL_NTS);
+		*/
+		//char* ptr = "Additional_";
+		//char* ptr = "heheh";
+		char* ptr = "";
+		char* ptr1 = "";
+		char ptr111[100]; // = NULL;
+		char chAppNeeded_ = 'F';
+		char* AA = "F";
+		char ptr222[100]; // = NULL;
+
+		SQLINTEGER  i;                /* sqlcli.h has "typedef long SQLINTEGER" */
+		SQLINTEGER  i_indicator;
+
+		SQLLEN len2 = 0; //strlen(ptr);
+		SQLLEN len3 = 0; //strlen(ptr);
+		int ret3 = SQLPrepare(stmt_handle,
+			(SQLCHAR*) "INSERT INTO tableNew (samaccountname, givenname, sn,middlename,Displayname,Mail, Department,physicalDeliveryOfficeName, Title,streetAddress,l,st,telephoneNumber) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);", SQL_NTS);
+			//(SQLCHAR*) "INSERT INTO tableNew (samaccountname_, givenname, sn, middlename, Displayname,Mail, Department, physicalDeliveryOfficeName, Title) VALUES(?,?,?,?,?,?,?,?,?);", SQL_NTS);
+		retcode = SQLBindParameter(stmt_handle, 1, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);	
+								SQL_LONGVARCHAR, 50, 0, samaccountname, strlen(samaccountname), NULL);
+		/*
+		retcode = SQLBindParameter(stmt_handle, 1, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								//SQL_CHAR, 50, 0, &ptr222, strlen(AA), NULL);
+								//SQL_CHAR, NULL, NULL, &chAppNeeded_, NULL, &i_indicator);
+								SQL_CHAR, 1, 0, &chAppNeeded_, 1, NULL);
+		i_indicator=SQL_NULL_DATA;
+		*/
+
+		
+		retcode = SQLBindParameter(stmt_handle, 2, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, givenname, strlen(givenname), NULL);
+		
+
+		retcode = SQLBindParameter(stmt_handle, 3, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, sn, strlen(sn), NULL);
+
+		retcode = SQLBindParameter(stmt_handle, 4, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, middlename, strlen(middlename), NULL);
+
+		retcode = SQLBindParameter(stmt_handle, 5, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, Displayname, strlen(Displayname), NULL);
+
+		retcode = SQLBindParameter(stmt_handle, 6, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, Mail, strlen(Mail), NULL);
+
+		retcode = SQLBindParameter(stmt_handle, 7, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, Department, strlen(Department), NULL);
+
+		retcode = SQLBindParameter(stmt_handle, 8, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, physicalDeliveryOfficeName, strlen(physicalDeliveryOfficeName), NULL);
+
+		retcode = SQLBindParameter(stmt_handle, 9, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, Title, strlen(Title), NULL);
+
+
+		retcode = SQLBindParameter(stmt_handle, 10, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, streetAddress, strlen(streetAddress), NULL);
+
+		retcode = SQLBindParameter(stmt_handle, 11, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, l, strlen(l), NULL);
+
+		retcode = SQLBindParameter(stmt_handle,12, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, st, strlen(st), NULL);
+	#if 1
+		retcode = SQLBindParameter(stmt_handle, 13, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    //SQL_LONGVARCHAR, 4, 0, ptr111, 100, &len2);
+								SQL_LONGVARCHAR, 50, 0, telephoneNumber, strlen(telephoneNumber), NULL);
+#endif
+
+
+
+		/*
+		ptr = samaccountname;
+		strcpy(ptr111,ptr);
+		len2 = strlen(ptr);
+
+		ptr1 = givenname;
+		//strcpy(ptr111,ptr);
+		strcpy(ptr222,ptr1);
+		*/
+		/*
+		chAppNeeded_ = 'F';
+		strcpy(ptr222,AA);
+		len3 = strlen(AA);
+		*/
+		/*
+		SQLLEN len1=0;
+		char* ptr = "ll";
+		char ptr111[3]; // = NULL;
+		//char ptr000[3]; // = NULL;
+		SQLLEN len2 = 0;
+		retcode = SQLBindParameter(stmt_handle, 1, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    SQL_CHAR, 4, 0, ptr, 4, &len1);
+		retcode = SQLBindParameter(stmt_handle, 2, SQL_PARAM_INPUT, SQL_C_CHAR,
+			                    SQL_CHAR, 4, 0, ptr111, 4, &len2);
+        
+        //            SQL_CHAR, 4, 0, "1", 4, &len1);
+
+		strcpy(ptr111,ptr);
+		len2 = strlen(ptr);
+		*/
+
+		int ret4 = SQLExecute(stmt_handle);
+		if(SQL_SUCCESS == ret4)
+			printf("SQLExecute success\n");
+		
+#if 0
+	    /*SQL Prepare for insert statement*/
+		/*
+		SQLCHAR samaccountnameArr[255];
+		char samaccountnameArr[255];
+		SQLLEN lensamaccountname=0;
+		SQLCHAR givennameArr[255];
+		SQLLEN lengivenname=0;
+
+		SQLCHAR snArr[255];
+		SQLLEN lensn=0;
+		SQLCHAR middlenameArr[255];
+		SQLLEN lenmiddlename=0;
+
+		SQLCHAR DisplaynameArr[255];
+		SQLLEN lenDisplayname=0;
+		//SQLCHAR Mail[255];
+		SQLCHAR MailArr[100];
+		SQLLEN lenMail=0;
+
+		SQLCHAR DepartmentArr[255];
+		SQLLEN lenDepartment=0;
+
+		SQLCHAR physicalDeliveryOfficeNameArr[255];
+		SQLLEN lenphysicalDeliveryOfficeName=0;
+		SQLCHAR TitleArr[255];
+		SQLLEN lenTitle=0;
+		SQLCHAR streetAddressArr[255];
+		SQLLEN lenstreetAddress=0;
+
+		SQLCHAR lArr[255];
+		SQLLEN lenl=0;
+		SQLCHAR stArr[255];
+		SQLLEN lenst=0;
+		SQLCHAR TelephoneNumberArr[255];
+		SQLLEN lenTelephoneNumber=0;
+		*/
+
+		/*
+		char samaccountnameArr[255];
+		SQLLEN lensamaccountname=0;
+		char givennameArr[255];
+		SQLLEN lengivenname=0;
+
+		char snArr[255];
+		SQLLEN lensn=0;
+		char middlenameArr[255];
+		SQLLEN lenmiddlename=0;
+
+		char DisplaynameArr[255];
+		SQLLEN lenDisplayname=0;
+		//SQLCHAR Mail[255];
+		char MailArr[100];
+		SQLLEN lenMail=0;
+
+		char DepartmentArr[255];
+		SQLLEN lenDepartment=0;
+
+		char physicalDeliveryOfficeNameArr[255];
+		SQLLEN lenphysicalDeliveryOfficeName=0;
+		char TitleArr[255];
+		SQLLEN lenTitle=0;
+		char streetAddressArr[255];
+		SQLLEN lenstreetAddress=0;
+
+		char lArr[255];
+		SQLLEN lenl=0;
+		char stArr[255];
+		SQLLEN lenst=0;
+		char TelephoneNumberArr[255];
+		SQLLEN lenTelephoneNumber=0;
+		*/
+
+		SQLLEN lensamaccountname=0;
+		SQLLEN lengivenname=0;
+		SQLLEN lensn=0;
+		SQLLEN lenmiddlename=0;
+		SQLLEN lenDisplayname=0;
+		SQLLEN lenMail=0;
+		SQLLEN lenDepartment=0;
+		SQLLEN lenphysicalDeliveryOfficeName=0;
+		SQLLEN lenTitle=0;
+		SQLLEN lenstreetAddress=0;
+		SQLLEN lenl=0;
+		SQLLEN lenst=0;
+		SQLLEN lenTelephoneNumber=0;
+		SQLLEN len=0;
+
+
+		retcode = SQLBindParameter(stmt_handle, 1, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255, &len);
+		retcode = SQLBindParameter(stmt_handle, 2, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255, &len);
+		retcode = SQLBindParameter(stmt_handle, 3, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255, &len);
+		retcode = SQLBindParameter(stmt_handle, 4, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 5, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,   &len);
+		retcode = SQLBindParameter(stmt_handle, 6, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 7, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 8, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		//Date Joined : Need to make time related call to find date.
+		/*https://www.tutorialspoint.com/cplusplus/cpp_date_time.htm*//*"2017-04-04 15:38:00"*/
+		time_t now = time(0);
+		tm *ltm = localtime(&now);
+		 // print various components of tm structure.
+		char str[255];
+		memset(str,'\0',255);
+		sprintf(str, "%d-%d-%d %d:%d:%d", ltm->tm_year,ltm->tm_mon,ltm->tm_mday,ltm->tm_hour,ltm->tm_min,ltm->tm_sec);
+		retcode = SQLBindParameter(stmt_handle, 9, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,&len);
+
+		retcode = SQLBindParameter(stmt_handle, 10, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		
+		//find domain name
+		char* domain = strstr (Mail,"@");
+		retcode = SQLBindParameter(stmt_handle, 11, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, domain + 1, 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 12, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, Mail, 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 13, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "T", 255,  &len);
+
+		//All remainings LM standard columns 
+		retcode = SQLBindParameter(stmt_handle, 14, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 15, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 16, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255,  &len);
+		//List Name
+		retcode = SQLBindParameter(stmt_handle, 17, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "list1", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 18, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 19, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "M", 255,  &len);
+
+		//Member ID, find the maximum existing + 1, and use it
+		retcode = SQLBindParameter(stmt_handle,20, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "10", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 21, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "normal", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 22, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 23, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 24, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 25, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "0", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 26, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "0", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 27, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 28, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 29, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 30, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 31, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 32, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "F", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 33, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 34, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "mail", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 35, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 36, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		retcode = SQLBindParameter(stmt_handle, 37, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, "", 255,  &len);
+		//All remainings LM standard columns  - upto here
+
+		retcode = SQLBindParameter(stmt_handle, 38, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, samaccountname, 255,
+                    &lensamaccountname);
+		
+	   
+		retcode = SQLBindParameter(stmt_handle, 39, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, givenname, 255,
+                    &lengivenname);
+		
+		retcode = SQLBindParameter(stmt_handle, 40, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, sn, 255,
+                    &lensn);
+		
+		retcode = SQLBindParameter(stmt_handle, 41, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, middlename, 255,
+                    &lenmiddlename);
+		
+		retcode = SQLBindParameter(stmt_handle, 42, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, Displayname, 255,
+                    &lenDisplayname);
+		/*
+		retcode = SQLBindParameter(stmt_handle, 1, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, Mail, 100,
+                    &lenMail);
+		*/
+
+		retcode = SQLBindParameter(stmt_handle, 43, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, Department, 255,
+                    &lenDepartment);
+		
+		retcode = SQLBindParameter(stmt_handle, 44, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, physicalDeliveryOfficeName, 255,
+                    &lenphysicalDeliveryOfficeName);
+		
+		retcode = SQLBindParameter(stmt_handle, 45, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, Title, 255,
+                    &lenTitle);
+
+		retcode = SQLBindParameter(stmt_handle, 46, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, streetAddress, 255,
+                    &lenstreetAddress);
+		retcode = SQLBindParameter(stmt_handle, 47, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, l, 255,
+                    &lenl);
+		retcode = SQLBindParameter(stmt_handle, 48, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, st, 255,
+                    &lenst);
+		retcode = SQLBindParameter(stmt_handle, 49, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, 255, 0, telephoneNumber, 255,
+                    &lenTelephoneNumber);
+
+
+/*
+		strcpy(strFirstName, "John"); lenFirstName=strlen(strFirstName);
+		strcpy(strLastName, "Smith"); lenLastName=strlen(strLastName);
+		strcpy(strAddress, "Laira");  lenAddress=strlen(strAddress);
+		strcpy(strCity, "Plymouth");  lenCity=strlen(strCity);
+*/
+#endif 
+		/*
+		retcode = SQLBindParameter(hstmt, 2, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, LASTNAME_LEN, 0, strLastName, LASTNAME_LEN,
+                    &lenLastName);
+		retcode = SQLBindParameter(hstmt, 3, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, ADDRESS_LEN, 0, strAddress, ADDRESS_LEN,
+                    &lenAddress);
+		retcode = SQLBindParameter(hstmt, 4, SQL_PARAM_INPUT, SQL_C_CHAR,
+                    SQL_CHAR, CITY_LEN, 0, strCity, CITY_LEN,
+                    &lenCity);
+
+		retcode = SQLPrepare(hstmt, (SQLCHAR*)"INSERT INTO TestTBL1"
+                        "(FirstName, LastName, Address, City)"
+                        "VALUES (?, ?, ?, ?)", SQL_NTS);
+
+		*/
+
+		/*
+		strcpy(samaccountnameArr, samaccountname); lensamaccountname=strlen(samaccountnameArr);
+		strcpy(givennameArr, givenname); lengivenname=strlen(givennameArr);
+		strcpy(snArr, sn);  lensn=strlen(snArr);
+		strcpy(middlenameArr, middlename); lenmiddlename=strlen(middlenameArr);
+		strcpy(DisplaynameArr, Displayname); lenDisplayname=strlen(DisplaynameArr);
+		strcpy(MailArr, Mail);  lenMail=strlen(MailArr);
+		strcpy(DepartmentArr, Department); lenDepartment=strlen(DepartmentArr);
+		strcpy(physicalDeliveryOfficeNameArr, physicalDeliveryOfficeName); lenphysicalDeliveryOfficeName=strlen(physicalDeliveryOfficeNameArr);
+		strcpy(TitleArr, Title);  lenTitle=strlen(TitleArr);
+		strcpy(streetAddressArr, streetAddress); lenstreetAddress=strlen(streetAddressArr);
+		strcpy(lArr, l); lenl=strlen(lArr);
+		strcpy(stArr, st);  lenst=strlen(stArr);
+		strcpy(TelephoneNumberArr, telephoneNumber);  lenTelephoneNumber=strlen(TelephoneNumberArr);
+		*/
+
+		int ret1 = SQLExecute(stmt_handle);
+		if(SQL_SUCCESS == ret1)
+			printf("SQLExecute success\n");
+		
+        SQLDisconnect(hconn);
+    }
+    else
+    {
+        rc = SQLGetDiagRec(SQL_HANDLE_DBC, hconn, 1, sqlstate, &nativeerror, message, 256, &textlen);
+ 
+        printf("SQLDriverConnect failed.\n");
+        if (rc!=SQL_ERROR)
+            printf("%s=%s\n", (CHAR *)sqlstate, (CHAR *)message);
+    }
+ 
+    SQLFreeHandle(SQL_HANDLE_DBC, hconn);
+    SQLFreeHandle(SQL_HANDLE_ENV, henv);
+}
+
+
+int main()
+{
+#if 0
+	if (AddFields())
+	{
+		printf("fine!!\n");
+	}
+	else
+	{
+		printf("not fine!!\n");
+		return 1;
+	}
+
+#endif 
+
+	//if (!(MyLDAPSearch("ohio","ohio")))
+	//if (!(MyLDAPSearch("administrator", "abc@1234#")))
+	//if (!(MyLDAPSearch("administrator", "abc@1234#")))
+	if (!(MyLDAPSearch("administrator", "87UxmymR.q")))
+	//if (!(MyLDAPSearch("ohioadplugin.net\administrator", "abc@1234#")))
+			printf("fine!!\n");
+	else
+		printf("Not fine!!\n");
+		
+}
