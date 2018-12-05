@@ -1,0 +1,42 @@
+language:
+    - python
+
+python:
+    - "3.3"
+
+compiler:
+    - clang
+    - gcc
+
+install:
+    - sudo apt-get install cmake
+    - sudo apt-get install libcurl3-dev
+    # install cmake toolchains and script
+    - POLLY_VERSION="0.7.0"
+    - wget "https://github.com/ruslo/polly/archive/v${POLLY_VERSION}.tar.gz"
+    - tar xf "v${POLLY_VERSION}.tar.gz"
+    - export PATH="`pwd`/polly-${POLLY_VERSION}/bin:${PATH}"
+    # -- end
+    # install cmake
+    - CMAKE_VERSION="3.2.1-ruslo"
+    - wget "https://github.com/ruslo/CMake/archive/v${CMAKE_VERSION}.tar.gz"
+    - openssl sha1 "v${CMAKE_VERSION}.tar.gz"
+    - tar xf "v${CMAKE_VERSION}.tar.gz"
+    - cd "CMake-${CMAKE_VERSION}"
+    -   build.py --install --toolchain default --config Release --fwd "CMAKE_USE_SYSTEM_CURL=YES"
+    -   export PATH="`pwd`/_install/default/bin:${PATH}"
+    - cd ..
+    # -- end
+    # verify installed cmake
+    - which cmake
+    - cmake --version
+    # -- end
+
+env:
+    - BUILD_TYPE="Debug" TOOLCHAIN="clang-libstdcxx"
+    - BUILD_TYPE="Release" TOOLCHAIN="clang-libstdcxx"
+    - BUILD_TYPE="Debug" TOOLCHAIN="gcc-4-8"
+    - BUILD_TYPE="Release" TOOLCHAIN="gcc-4-8"
+
+script:
+    - build.py --toolchain ${TOOLCHAIN} --verbose --test --config ${BUILD_TYPE} --fwd SOBER_RUN_LONG_TESTS=ON
