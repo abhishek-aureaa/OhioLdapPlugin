@@ -11,24 +11,20 @@ namespace network {
 namespace api {
 
 OpenWeatherMap::OpenWeatherMap(http::Stream& stream): stream_(stream) {
-  //stream_.set_endpoint("http://api.openweathermap.org/data/2.5/weather");
-  stream_.set_endpoint("http://api.openweathermap.org/data/2.5/forecast?id=2768022&APPID=373725371cd6d4f4e8f59274dec28d20");  
+  stream_.set_endpoint("http://api.openweathermap.org/data/2.5/weather");
   stream_.set_delegate(*this);
 }
 
-void OpenWeatherMap::async_get_city(
-    const char* city, http::ExtraSuccessHandler handler
-) {
+void OpenWeatherMap::async_get_city(const char* city) {
   stream_.request.clear_query();
   stream_.request.add_query("q", city);
+  stream_.request.add_query("APPID", "373725371cd6d4f4e8f59274dec28d20");
   stream_.request.add_query("units", "metric");
-  stream_.async_start(handler);
+  stream_.async_start();
 }
 
-void OpenWeatherMap::async_get_city(
-    const std::string& city, http::ExtraSuccessHandler handler
-) {
-  async_get_city(city.c_str(), handler);
+void OpenWeatherMap::async_get_city(const std::string& city) {
+  async_get_city(city.c_str());
 }
 
 void OpenWeatherMap::Attribute::fill(const ciere::json::value& value) {
