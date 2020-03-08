@@ -1,4 +1,0 @@
-sober
-=====
-
-C++ stuff
